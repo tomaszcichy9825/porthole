@@ -33,3 +33,4 @@ GoogleService-Info.plist
 
 # Test
 coverage/
+.gitnexus
