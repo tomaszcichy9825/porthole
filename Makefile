@@ -18,10 +18,11 @@ ios: ## Build and run the dev build on iOS
 android: ## Build and run the dev build on Android
 	cd $(APP_DIR) && npx expo run:android
 
-# macOS runs iOS apps only when they carry a real signature - ad-hoc is
-# rejected ("incorrect executable format"). A free personal team is enough:
-# Xcode > Settings > Accounts > add your Apple ID, then find the team id with
-# `make team`.
+# macOS runs iOS apps only when (a) they carry a real signature - ad-hoc is
+# rejected - and (b) they sit in the App Store "wrapped bundle" layout
+# (Wrapper/ + WrappedBundle symlink); a bare .app fails with "incorrect
+# executable format" either way. A free personal team is enough: Xcode >
+# Settings > Accounts > add your Apple ID, then `make team` for the id.
 desktop: ## Build and run on this Mac. Usage: make desktop TEAM=XXXXXXXXXX
 	@test -n "$(TEAM)" || (echo "TEAM is required: add your Apple ID in Xcode (Settings > Accounts, free), then run 'make team' to find the id and 'make desktop TEAM=<id>'" && exit 1)
 	@test -d $(APP_DIR)/ios || (cd $(APP_DIR) && npx expo prebuild -p ios)
@@ -30,10 +31,15 @@ desktop: ## Build and run on this Mac. Usage: make desktop TEAM=XXXXXXXXXX
 		-derivedDataPath build -allowProvisioningUpdates \
 		CODE_SIGN_STYLE=Automatic DEVELOPMENT_TEAM=$(TEAM) build
 	@APP=$$(find $(APP_DIR)/ios/build/Build/Products -maxdepth 2 -name '*.app' | head -1); \
-		echo "Launching $$APP"; open "$$APP"
+		rm -rf /Applications/Porthole.app; \
+		mkdir -p /Applications/Porthole.app/Wrapper; \
+		cp -R "$$APP" /Applications/Porthole.app/Wrapper/; \
+		ln -sf Wrapper/Porthole.app /Applications/Porthole.app/WrappedBundle; \
+		echo "Launching /Applications/Porthole.app"; open /Applications/Porthole.app
 
 team: ## Show Apple development team ids available on this Mac
-	@IDS=$$(security find-identity -v -p codesigning | grep -oE '\(([A-Z0-9]{10})\)' | tr -d '()' | sort -u); \
+	@IDS=$$( (security find-identity -v -p codesigning | grep -oE '\(([A-Z0-9]{10})\)' | tr -d '()'; \
+		defaults read com.apple.dt.Xcode IDEProvisioningTeamByIdentifier 2>/dev/null | grep -oE 'teamID = [A-Z0-9]{10}' | awk '{print $$3}') | sort -u); \
 		if [ -n "$$IDS" ]; then echo "$$IDS"; else echo "none - add your Apple ID in Xcode first (Settings > Accounts)"; fi
 
 ipad: ## Run on an iPad simulator (desktop rail layout, no signing needed)
