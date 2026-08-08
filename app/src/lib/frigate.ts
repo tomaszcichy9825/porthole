@@ -86,7 +86,11 @@ export function createClient(baseUrl: string, rtspPort = 8554, token?: string | 
   const api = baseUrl.replace(/\/$/, '');
   const rtspHost = `${hostOf(api)}:${rtspPort}`;
   // Same shape for fetch, expo-image sources and expo-video sources.
-  const authHeaders: Record<string, string> = token ? { Cookie: `frigate_token=${token}` } : {};
+  // Bearer first: iOS URLSession manages cookies itself and can drop a
+  // manually set Cookie header; Frigate accepts either.
+  const authHeaders: Record<string, string> = token
+    ? { Authorization: `Bearer ${token}`, Cookie: `frigate_token=${token}` }
+    : {};
 
   const j = async <T>(path: string, init?: RequestInit): Promise<T> => {
     const r = await fetch(`${api}${path}`, { ...init, headers: { ...authHeaders, ...init?.headers } });
