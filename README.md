@@ -1,6 +1,19 @@
-# Porthole
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/mark-dark.svg">
+    <img src="assets/brand/mark.svg" width="96" height="96" alt="Porthole logo: a teal ring with a lit half and an aperture at the centre">
+  </picture>
+</p>
 
-**A fast, native, cross-platform client for [Frigate NVR](https://frigate.video).**
+<h1 align="center">Porthole</h1>
+
+<p align="center"><strong>A fast, native, cross-platform client for <a href="https://frigate.video">Frigate NVR</a>.</strong></p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/licence-MPL--2.0-1B5E5A" alt="MPL-2.0 licence"></a>
+  <img src="https://img.shields.io/badge/status-pre--alpha-C2410C" alt="Pre-alpha status">
+  <a href="https://github.com/sponsors/tomaszcichy9825"><img src="https://img.shields.io/badge/sponsor-%E2%9D%A4-E6F0EE" alt="Sponsor"></a>
+</p>
 
 > The native Frigate app that doesn't freeze. Live view and instant-rewind recordings, hardware-decoded, no cloud.
 

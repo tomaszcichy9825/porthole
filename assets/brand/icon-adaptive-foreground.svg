@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none">
+  <!-- Android adaptive icon foreground: mark inside the 66% safe zone, transparent background.
+       Pair with backgroundColor #1B5E5A in app.json. -->
+  <g transform="translate(288 288) scale(14)">
+    <circle cx="16" cy="16" r="13" stroke="#FFFFFF" stroke-width="2.5"/>
+    <path d="M16 7a9 9 0 0 1 0 18z" fill="#FFFFFF"/>
+    <circle cx="16" cy="16" r="3.2" fill="#1B5E5A"/>
+  </g>
+</svg>
