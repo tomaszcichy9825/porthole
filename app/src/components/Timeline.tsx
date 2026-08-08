@@ -1,8 +1,24 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import type { FrigateEvent, RecordingSegment } from '@/lib/frigate';
 import { colors, fonts, labelColor } from '@/theme';
+
+// Frigate returns one segment per ~10s of recording - thousands per day.
+// Rendering a View per segment freezes the UI, so merge near-contiguous
+// segments into runs before drawing, and cap the number of event ticks.
+const MAX_EVENT_TICKS = 120;
+
+function mergeSegments(segments: RecordingSegment[], span: number): { start: number; end: number }[] {
+  const gap = Math.max(30, span * 0.002);
+  const out: { start: number; end: number }[] = [];
+  for (const seg of segments) {
+    const last = out[out.length - 1];
+    if (last && seg.start_time - last.end <= gap) last.end = Math.max(last.end, seg.end_time);
+    else out.push({ start: seg.start_time, end: seg.end_time });
+  }
+  return out;
+}
 
 // One-lane timeline for the camera console (design 1c, single camera on
 // mobile). Grey blocks are recorded ranges, coloured ticks are events,
@@ -30,6 +46,13 @@ export function Timeline({
     [windowStart, span],
   );
 
+  const runs = useMemo(() => mergeSegments(segments, span), [segments, span]);
+  const ticks = useMemo(() => {
+    if (events.length <= MAX_EVENT_TICKS) return events;
+    const step = Math.ceil(events.length / MAX_EVENT_TICKS);
+    return events.filter((_, i) => i % step === 0);
+  }, [events]);
+
   const hourMarks: number[] = [];
   for (let t = Math.ceil(windowStart / 3600) * 3600; t < windowEnd; t += 3600) hourMarks.push(t);
   const showEvery = Math.max(1, Math.ceil(hourMarks.length / 6));
@@ -56,19 +79,19 @@ export function Timeline({
           onSeek(windowStart + ratio * span);
         }}
       >
-        {segments.map((seg, i) => (
+        {runs.map((run, i) => (
           <View
             key={i}
             style={[
               s.seg,
               {
-                left: `${pct(seg.start_time)}%`,
-                width: `${Math.max(0.4, pct(seg.end_time) - pct(seg.start_time))}%`,
+                left: `${pct(run.start)}%`,
+                width: `${Math.max(0.4, pct(run.end) - pct(run.start))}%`,
               },
             ]}
           />
         ))}
-        {events.map((ev) => (
+        {ticks.map((ev) => (
           <View
             key={ev.id}
             style={[s.event, { left: `${pct(ev.start_time)}%`, backgroundColor: labelColor(ev.label) }]}
