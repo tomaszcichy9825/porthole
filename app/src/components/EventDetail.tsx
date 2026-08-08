@@ -13,8 +13,8 @@ export function EventDetail({ id, onDeleted }: { id: string; onDeleted?: () => v
   const fg = useFrigate();
   const { data: event } = useEvent(id);
 
-  const clipUrl = fg && id ? fg.eventClipUrl(id) : null;
-  const player = useVideoPlayer(clipUrl, (p) => {
+  const clipSource = fg && id ? { uri: fg.eventClipUrl(id), headers: fg.authHeaders } : null;
+  const player = useVideoPlayer(clipSource, (p) => {
     p.play();
   });
 

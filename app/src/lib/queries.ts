@@ -6,10 +6,10 @@ import { createClient } from '@/lib/frigate';
 import { useActiveServer } from '@/stores/servers';
 
 export const useFrigate = () => {
-  const { server, baseUrl } = useActiveServer();
+  const { server, baseUrl, token } = useActiveServer();
   return useMemo(
-    () => (baseUrl ? createClient(baseUrl, server?.rtspPort) : null),
-    [baseUrl, server?.rtspPort],
+    () => (baseUrl ? createClient(baseUrl, server?.rtspPort, token) : null),
+    [baseUrl, server?.rtspPort, token],
   );
 };
 

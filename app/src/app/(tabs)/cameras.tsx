@@ -96,6 +96,7 @@ export default function Cameras() {
             <CameraTile
               name={item}
               snapshotUrl={fg.snapshotUrl(item, 480)}
+              headers={fg.authHeaders}
               resolution={detect ? `${detect.width}×${detect.height}` : undefined}
               onPress={() => router.push({ pathname: '/camera/[name]', params: { name: item } })}
             />

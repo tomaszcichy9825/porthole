@@ -14,8 +14,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Mark } from '@/components/Mark';
 import { Card, Mono } from '@/components/ui';
-import { createClient } from '@/lib/frigate';
-import { useServers } from '@/stores/servers';
+import { createClient, login } from '@/lib/frigate';
+import { saveCredentials, useServers } from '@/stores/servers';
 import { colors, fonts, radius } from '@/theme';
 
 type TestResult = { version: string; cameras: string[] } | { error: string } | null;
@@ -25,9 +25,11 @@ export default function Onboarding() {
   const addServer = useServers((s) => s.addServer);
   const refresh = useServers((s) => s.refreshReachability);
 
-  const [localUrl, setLocalUrl] = useState('http://');
+  const [localUrl, setLocalUrl] = useState('https://');
   const [remoteUrl, setRemoteUrl] = useState('');
   const [name, setName] = useState('Home');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState<TestResult>(null);
 
@@ -35,7 +37,10 @@ export default function Onboarding() {
     setTesting(true);
     setResult(null);
     try {
-      const fg = createClient(localUrl.trim());
+      const base = localUrl.trim().replace(/\/$/, '');
+      let token: string | undefined;
+      if (username.trim()) token = await login(base, username.trim(), password);
+      const fg = createClient(base, undefined, token);
       const version = await fg.getVersion();
       const cfg = await fg.getConfig();
       setResult({ version, cameras: Object.keys(cfg.cameras) });
@@ -51,7 +56,9 @@ export default function Onboarding() {
       name: name.trim() || 'Frigate',
       localUrl: localUrl.trim().replace(/\/$/, ''),
       remoteUrl: remoteUrl.trim() ? remoteUrl.trim().replace(/\/$/, '') : undefined,
+      username: username.trim() || undefined,
     });
+    if (username.trim()) await saveCredentials(id, username.trim(), password);
     refresh(id);
     router.replace('/(tabs)/cameras');
   };
@@ -114,6 +121,36 @@ export default function Onboarding() {
                 placeholderTextColor={colors.textGhost}
               />
             </View>
+            <View style={s.row2}>
+              <View style={[s.field, { flex: 1 }]}>
+                <Text style={s.label}>Username</Text>
+                <TextInput
+                  style={s.input}
+                  value={username}
+                  onChangeText={setUsername}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  placeholder="frigate user"
+                  placeholderTextColor={colors.textGhost}
+                />
+              </View>
+              <View style={[s.field, { flex: 1 }]}>
+                <Text style={s.label}>Password</Text>
+                <TextInput
+                  style={s.input}
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry
+                  autoCapitalize="none"
+                  placeholder="••••••••"
+                  placeholderTextColor={colors.textGhost}
+                />
+              </View>
+            </View>
+            <Text style={s.authHint}>
+              Needed for the authenticated port (:8971) or a domain in front of it. Leave empty
+              only for the unauthenticated internal API (:5000). Stored in the device Keychain.
+            </Text>
 
             {result ? (
               <View style={s.result}>
@@ -171,6 +208,8 @@ const s = StyleSheet.create({
   labelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   label: { fontSize: 12.5, fontFamily: fonts.sansSemiBold, color: colors.textLabel },
   labelHint: { fontSize: 11.5, color: colors.textFaint, fontFamily: fonts.sans },
+  row2: { flexDirection: 'row', gap: 12 },
+  authHint: { fontSize: 11.5, color: colors.textFaint, fontFamily: fonts.sans, lineHeight: 16 },
   input: {
     height: 44,
     borderWidth: 1,
