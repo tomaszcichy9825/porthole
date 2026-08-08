@@ -72,6 +72,7 @@ export default function CameraConsole() {
 
   return (
     <SafeAreaView style={s.safe}>
+      <View style={s.content}>
       <View style={s.header}>
         <Pressable onPress={() => router.back()} style={s.back}>
           <Text style={s.backText}>‹ All cameras</Text>
@@ -180,12 +181,14 @@ export default function CameraConsole() {
           ))}
         </View>
       </View>
+      </View>
     </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.paper },
+  content: { flex: 1, width: '100%', maxWidth: 1100, alignSelf: 'center' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',

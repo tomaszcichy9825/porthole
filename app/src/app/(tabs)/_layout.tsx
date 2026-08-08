@@ -1,6 +1,10 @@
-import { Tabs } from 'expo-router';
+import { Slot, Tabs } from 'expo-router';
+import { View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 
+import { Rail } from '@/components/Rail';
+import { useWide } from '@/lib/layout';
 import { colors, fonts } from '@/theme';
 
 // The desktop rail becomes bottom tabs on mobile: Cameras, Events, Settings.
@@ -27,6 +31,22 @@ const GearIcon = ({ color }: { color: import('react-native').ColorValue }) => (
 );
 
 export default function TabsLayout() {
+  const wide = useWide();
+
+  // Wide (Mac, iPad landscape): the design's desktop rail replaces tabs.
+  if (wide) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.paper }} edges={['top', 'left', 'right']}>
+        <View style={{ flex: 1, flexDirection: 'row' }}>
+          <Rail />
+          <View style={{ flex: 1 }}>
+            <Slot />
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <Tabs
       screenOptions={{

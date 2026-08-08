@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CameraTile } from '@/components/CameraTile';
 import { Chip, Mono, Segmented } from '@/components/ui';
+import { useWide } from '@/lib/layout';
 import { useCameras, useFrigate } from '@/lib/queries';
 import { useActiveServer, useServers } from '@/stores/servers';
 import { colors, fonts } from '@/theme';
@@ -16,7 +17,8 @@ export default function Cameras() {
   const refreshReachability = useServers((s) => s.refreshReachability);
   const { cameras, data: config, isLoading, refetch, isRefetching } = useCameras();
 
-  const [columns, setColumns] = useState<'1' | '2'>('2');
+  const wide = useWide();
+  const [columns, setColumns] = useState<'1' | '2' | '3'>(wide ? '3' : '2');
   const [group, setGroup] = useState<string>('All');
 
   const serverId = server?.id;
@@ -50,7 +52,12 @@ export default function Cameras() {
           </Mono>
         </View>
         <View style={{ flex: 1 }} />
-        <Segmented options={['1', '2'] as const} value={columns} onChange={setColumns} mono />
+        <Segmented
+          options={wide ? (['1', '2', '3'] as const) : (['1', '2'] as const)}
+          value={columns}
+          onChange={setColumns}
+          mono
+        />
       </View>
 
       {groups.length > 0 ? (
@@ -76,8 +83,8 @@ export default function Cameras() {
         key={columns}
         data={visible}
         keyExtractor={(c) => c}
-        numColumns={columns === '2' ? 2 : 1}
-        columnWrapperStyle={columns === '2' ? { gap: 10 } : undefined}
+        numColumns={Number(columns)}
+        columnWrapperStyle={columns !== '1' ? { gap: 10 } : undefined}
         contentContainerStyle={s.grid}
         refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
         ListEmptyComponent={
