@@ -20,6 +20,21 @@ const RATES = ['1×', '2×', '4×', '8×'] as const;
 
 const titleOf = (n: string) => n.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
 
+// Isolated so the per-second tick re-renders this Text only, not the console.
+function StageClock({ playhead, style }: { playhead: number | null; style: object }) {
+  const [clock, setClock] = useState(() => Date.now());
+  useEffect(() => {
+    if (playhead !== null) return;
+    const t = setInterval(() => setClock(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [playhead]);
+  const text =
+    playhead === null
+      ? new Date(clock).toLocaleTimeString(undefined, { hour12: false })
+      : new Date(playhead * 1000).toLocaleTimeString(undefined, { hour12: false });
+  return <Text style={style}>{text}</Text>;
+}
+
 // Design screen 1c: one Cameras console, now/then toggle, always-there
 // timeline. Dragging back moves you into the past; NOW returns to live.
 export default function CameraConsole() {
@@ -31,26 +46,20 @@ export default function CameraConsole() {
   const setQuality = useServers((s) => s.setQuality);
   const { cameras, data: config } = useCameras();
 
-  // null = live; an epoch = "then" playback starting there.
+  // null = live; an epoch = "then" playback starting there. The playhead is
+  // where the user is; chunkStart anchors the loaded HLS manifest - seeks
+  // inside the chunk are native player seeks, not manifest rebuilds.
   const [playhead, setPlayhead] = useState<number | null>(at ? Number(at) : null);
+  const [chunkStart, setChunkStart] = useState<number | null>(at ? Number(at) : null);
   const [windowKey, setWindowKey] = useState<WindowKey>('12 h');
   const [rate, setRate] = useState<(typeof RATES)[number]>('1×');
 
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
-  const touchNow = () => {
-    const t = Math.floor(Date.now() / 1000);
-    setNow(t);
-    return t;
-  };
-  const live = playhead === null;
-
-  // The big clock ticks every second while live.
-  const [clock, setClock] = useState(() => Date.now());
   useEffect(() => {
-    if (!live) return;
-    const t = setInterval(() => setClock(Date.now()), 1000);
+    const t = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 30_000);
     return () => clearInterval(t);
-  }, [live]);
+  }, []);
+  const live = playhead === null;
 
   const windowStart = now - WINDOWS[windowKey];
   const { data: segments } = useRecordingSegments(name, windowStart, now);
@@ -69,12 +78,11 @@ export default function CameraConsole() {
   };
 
   const VOD_CHUNK = 3600;
+  const chunkEnd = chunkStart !== null ? Math.min(chunkStart + VOD_CHUNK, now - 30) : null;
   const vodSource = useMemo(() => {
-    if (!fg || !name || playhead === null) return null;
-    const end = Math.min(playhead + VOD_CHUNK, now - 30);
-    if (end <= playhead) return null;
-    return { uri: fg.recordingHlsUrl(name, playhead, end), headers: fg.authHeaders };
-  }, [fg, name, playhead, now]);
+    if (!fg || !name || chunkStart === null || chunkEnd === null || chunkEnd <= chunkStart) return null;
+    return { uri: fg.recordingHlsUrl(name, chunkStart, chunkEnd), headers: fg.authHeaders };
+  }, [fg, name, chunkStart, chunkEnd]);
 
   const player = useVideoPlayer(vodSource, (p) => {
     p.play();
@@ -88,20 +96,27 @@ export default function CameraConsole() {
   };
 
   const seekTo = (t: number) => {
-    const nowT = touchNow();
-    const snapped = snapToRecording(Math.min(t, nowT - 60));
+    const snapped = snapToRecording(Math.min(t, now - 60));
     if (snapped === null) {
-      setPlayhead(null); // nothing recorded there: stay/return to live
+      setPlayhead(null);
+      setChunkStart(null); // nothing recorded there: return to live
       return;
     }
-    setPlayhead(Math.min(snapped, nowT - 60));
+    const target = Math.min(snapped, now - 60);
+    setPlayhead(target);
+    if (chunkStart !== null && chunkEnd !== null && target >= chunkStart && target < chunkEnd - 5) {
+      // Inside the loaded manifest: a native seek, no player rebuild.
+      // eslint-disable-next-line react-hooks/immutability
+      player.currentTime = target - chunkStart;
+    } else {
+      setChunkStart(target);
+    }
   };
 
   const seekBy = (seconds: number) => {
-    const t = touchNow();
     if (playhead === null) {
       // Rewinding from live drops into then-mode.
-      if (seconds < 0) seekTo(t + seconds);
+      if (seconds < 0) seekTo(now + seconds);
       return;
     }
     seekTo(playhead + seconds);
@@ -111,9 +126,6 @@ export default function CameraConsole() {
 
   const detect = config?.cameras[name]?.detect;
   const resText = detect ? `${detect.width}×${detect.height}` : '';
-  const clockText = live
-    ? new Date(clock).toLocaleTimeString(undefined, { hour12: false })
-    : new Date(playhead * 1000).toLocaleTimeString(undefined, { hour12: false });
 
   return (
     <SafeAreaView style={s.safe} edges={wide ? [] : ['top']}>
@@ -129,11 +141,17 @@ export default function CameraConsole() {
         <Text style={s.title}>{titleOf(name)}</Text>
 
         <View style={s.modeToggle}>
-          <Pressable onPress={() => setPlayhead(null)} style={[s.modeItem, live && s.modeItemActive]}>
+          <Pressable
+            onPress={() => {
+              setPlayhead(null);
+              setChunkStart(null);
+            }}
+            style={[s.modeItem, live && s.modeItemActive]}
+          >
             {live ? <View style={s.liveDot} /> : null}
             <Text style={[s.modeText, live && s.modeTextActive]}>Now</Text>
           </Pressable>
-          <Pressable onPress={() => seekTo(touchNow() - 300)} style={[s.modeItem, !live && s.modeItemActive]}>
+          <Pressable onPress={() => seekTo(now - 300)} style={[s.modeItem, !live && s.modeItemActive]}>
             <Text style={[s.modeText, !live && s.modeTextActive]}>Then</Text>
           </Pressable>
         </View>
@@ -198,7 +216,7 @@ export default function CameraConsole() {
               )}
             </View>
             <View style={s.stageBottomRow}>
-              <Text style={s.clock}>{clockText}</Text>
+              <StageClock playhead={playhead} style={s.clock} />
             </View>
           </View>
         </View>
