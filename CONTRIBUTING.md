@@ -15,7 +15,7 @@ Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`, ...). Subject line 50 
 
 ## Releases
 
-Releases are cut by tagging `vX.Y.Z` on `main`. A GitHub Actions workflow creates the GitHub release with generated notes.
+Releases are cut with `make release V=X.Y.Z` (tags `vX.Y.Z` on `main`). The tag triggers a workflow that creates the GitHub release with generated notes, runs an EAS cloud build of the Android APK, and attaches the APK to the release page. Requires the `EXPO_TOKEN` repository secret.
 
 ## Licence
 
