@@ -13,15 +13,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      # App scaffold does not exist yet; lint/typecheck/test wired up once app/ lands.
-      - name: Lint, typecheck, test
-        run: |
-          if [ -f app/package.json ]; then
-            cd app
-            npm ci
-            npm run lint --if-present
-            npx tsc --noEmit || true
-            npm test --if-present
-          else
-            echo "No app yet; CI is a placeholder."
-          fi
+      - name: Install
+        run: cd app && npm ci
+      - name: Lint
+        run: cd app && CI=1 npx expo lint
+      - name: Typecheck
+        run: cd app && npx tsc --noEmit
+      - name: Test
+        run: cd app && npm test --if-present
