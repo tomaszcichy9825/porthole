@@ -68,13 +68,17 @@ export default function Cameras() {
             data={['All', ...groups.map((g) => g.name)]}
             keyExtractor={(g) => g}
             contentContainerStyle={{ gap: 6, paddingHorizontal: 16 }}
-            renderItem={({ item }) => (
-              <Chip
-                label={item === 'All' ? `All ${cameras.length}` : item}
-                active={group === item}
-                onPress={() => setGroup(item)}
-              />
-            )}
+            renderItem={({ item }) => {
+              const def = groups.find((g) => g.name === item);
+              const count = item === 'All' ? cameras.length : (def?.cameras.length ?? 0);
+              return (
+                <Chip
+                  label={`${item} ${count}`}
+                  active={group === item}
+                  onPress={() => setGroup(item)}
+                />
+              );
+            }}
           />
         </View>
       ) : null}
@@ -115,6 +119,9 @@ const s = StyleSheet.create({
     gap: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
+    backgroundColor: colors.card,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
   },
   title: { fontSize: 17, fontFamily: fonts.sansSemiBold, color: colors.ink, letterSpacing: -0.2 },
   statusPill: {
@@ -128,7 +135,13 @@ const s = StyleSheet.create({
   },
   dot: { width: 6, height: 6, borderRadius: 3 },
   statusText: { fontSize: 12, color: colors.textMuted },
-  groupRow: { paddingBottom: 10 },
+  groupRow: {
+    paddingVertical: 9,
+    backgroundColor: colors.card,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    marginBottom: 10,
+  },
   grid: { paddingHorizontal: 16, paddingBottom: 24, gap: 10 },
   empty: {
     textAlign: 'center',
