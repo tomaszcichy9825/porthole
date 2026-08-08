@@ -38,10 +38,24 @@ export default function CameraConsole() {
   const { data: segments } = useRecordingSegments(name, windowStart, now);
   const { data: events } = useEvents({ camera: name, after: windowStart, limit: 100 });
 
-  // VOD window: from the seek point to (near) now; segments need ~30 s to finalise.
+  // A VOD playlist whose window starts before any recorded media 503s in
+  // nginx's vod module, and an hours-long manifest is slow to build. Snap
+  // the seek into the recorded segments and serve at most an hour per chunk.
+  const snapToRecording = (t: number): number | null => {
+    if (!segments?.length) return t;
+    for (const seg of segments) {
+      if (t >= seg.start_time && t <= seg.end_time) return t;
+      if (seg.start_time > t) return seg.start_time;
+    }
+    return null; // after the last segment: nothing recorded there yet
+  };
+
+  const VOD_CHUNK = 3600;
   const vodSource = useMemo(() => {
     if (!fg || !name || playhead === null) return null;
-    return { uri: fg.recordingHlsUrl(name, playhead, now - 30), headers: fg.authHeaders };
+    const end = Math.min(playhead + VOD_CHUNK, now - 30);
+    if (end <= playhead) return null;
+    return { uri: fg.recordingHlsUrl(name, playhead, end), headers: fg.authHeaders };
   }, [fg, name, playhead, now]);
 
   const player = useVideoPlayer(vodSource, (p) => {
@@ -55,14 +69,24 @@ export default function CameraConsole() {
     player.playbackRate = Number(r.replace('×', ''));
   };
 
+  const seekTo = (t: number) => {
+    const nowT = touchNow();
+    const snapped = snapToRecording(Math.min(t, nowT - 60));
+    if (snapped === null) {
+      setPlayhead(null); // nothing recorded there: stay/return to live
+      return;
+    }
+    setPlayhead(Math.min(snapped, nowT - 60));
+  };
+
   const seekBy = (seconds: number) => {
     const t = touchNow();
     if (playhead === null) {
       // Rewinding from live drops into then-mode.
-      if (seconds < 0) setPlayhead(t + seconds);
+      if (seconds < 0) seekTo(t + seconds);
       return;
     }
-    setPlayhead(Math.min(playhead + seconds, t - 60));
+    seekTo(playhead + seconds);
   };
 
   if (!fg || !name) return null;
@@ -85,7 +109,7 @@ export default function CameraConsole() {
             <Text style={[s.modeText, live && s.modeTextActive]}>Now</Text>
           </Pressable>
           <Pressable
-            onPress={() => setPlayhead(touchNow() - 300)}
+            onPress={() => seekTo(touchNow() - 300)}
             style={[s.modeItem, !live && s.modeItemActive]}
           >
             <Text style={[s.modeText, !live && s.modeTextActive]}>Then</Text>
@@ -166,7 +190,7 @@ export default function CameraConsole() {
           segments={segments ?? []}
           events={events ?? []}
           playhead={playhead}
-          onSeek={(t) => setPlayhead(Math.min(t, touchNow() - 60))}
+          onSeek={seekTo}
         />
         <View style={s.legend}>
           {(['Person', 'Car', 'Animal'] as const).map((l) => (
