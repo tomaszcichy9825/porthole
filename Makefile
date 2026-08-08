@@ -33,7 +33,8 @@ desktop: ## Build and run on this Mac. Usage: make desktop TEAM=XXXXXXXXXX
 		echo "Launching $$APP"; open "$$APP"
 
 team: ## Show Apple development team ids available on this Mac
-	@security find-identity -v -p codesigning | grep -oE '\(([A-Z0-9]{10})\)' | tr -d '()' | sort -u || echo "none - add your Apple ID in Xcode first"
+	@IDS=$$(security find-identity -v -p codesigning | grep -oE '\(([A-Z0-9]{10})\)' | tr -d '()' | sort -u); \
+		if [ -n "$$IDS" ]; then echo "$$IDS"; else echo "none - add your Apple ID in Xcode first (Settings > Accounts)"; fi
 
 ipad: ## Run on an iPad simulator (desktop rail layout, no signing needed)
 	cd $(APP_DIR) && npx expo run:ios --device "iPad Pro 13-inch (M5)"
