@@ -4,8 +4,10 @@ import { useMemo, useState } from 'react';
 import { Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { EventDetail } from '@/components/EventDetail';
 import { Chip, Mono } from '@/components/ui';
 import type { FrigateEvent } from '@/lib/frigate';
+import { useWide } from '@/lib/layout';
 import { useCameras, useEvents, useFrigate } from '@/lib/queries';
 import { colors, fonts, labelColor } from '@/theme';
 
@@ -24,9 +26,11 @@ const dayTitle = (t: number) => {
 // Design screen 2c: filterable events list; detail is its own screen on mobile.
 export default function Events() {
   const fg = useFrigate();
+  const wide = useWide();
   const { cameras } = useCameras();
   const [label, setLabel] = useState<string | undefined>();
   const [camera, setCamera] = useState<string | undefined>();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const [after] = useState(() => Math.floor(Date.now() / 1000) - 7 * 86_400);
   const { data: events, isLoading } = useEvents({ after, limit: 200, label, camera });
@@ -48,7 +52,7 @@ export default function Events() {
 
   if (!fg) return null;
 
-  return (
+  const list = (
     <SafeAreaView style={s.safe} edges={['top']}>
       <View style={s.header}>
         <Text style={s.title}>Events</Text>
@@ -90,13 +94,52 @@ export default function Events() {
           <Text style={s.empty}>{isLoading ? 'Loading events…' : 'No events in this window.'}</Text>
         }
         renderSectionHeader={({ section }) => <Text style={s.day}>{section.title}</Text>}
-        renderItem={({ item }) => <EventRow event={item} thumbUrl={fg.eventThumbUrl(item.id)} />}
+        renderItem={({ item }) => (
+          <EventRow
+            event={item}
+            thumbUrl={fg.eventThumbUrl(item.id)}
+            selected={wide && item.id === selectedId}
+            onPress={() =>
+              wide
+                ? setSelectedId(item.id)
+                : router.push({ pathname: '/event/[id]', params: { id: item.id } })
+            }
+          />
+        )}
       />
     </SafeAreaView>
   );
+
+  if (!wide) return list;
+
+  // Desktop (design 2c): list on the left, the selected clip on the right.
+  return (
+    <View style={s.split}>
+      <View style={s.splitList}>{list}</View>
+      <View style={s.splitPane}>
+        {selectedId ? (
+          <EventDetail id={selectedId} onDeleted={() => setSelectedId(null)} />
+        ) : (
+          <View style={s.splitEmpty}>
+            <Text style={s.empty}>Select an event</Text>
+          </View>
+        )}
+      </View>
+    </View>
+  );
 }
 
-function EventRow({ event, thumbUrl }: { event: FrigateEvent; thumbUrl: string }) {
+function EventRow({
+  event,
+  thumbUrl,
+  selected = false,
+  onPress,
+}: {
+  event: FrigateEvent;
+  thumbUrl: string;
+  selected?: boolean;
+  onPress: () => void;
+}) {
   const time = new Date(event.start_time * 1000).toLocaleTimeString(undefined, {
     hour: '2-digit',
     minute: '2-digit',
@@ -105,10 +148,7 @@ function EventRow({ event, thumbUrl }: { event: FrigateEvent; thumbUrl: string }
   const score = event.data?.top_score ?? event.top_score;
 
   return (
-    <Pressable
-      style={s.row}
-      onPress={() => router.push({ pathname: '/event/[id]', params: { id: event.id } })}
-    >
+    <Pressable style={[s.row, selected && s.rowSelected]} onPress={onPress}>
       <View style={s.thumb}>
         <Image source={{ uri: thumbUrl }} style={StyleSheet.absoluteFill} contentFit="cover" />
       </View>
@@ -166,7 +206,19 @@ const s = StyleSheet.create({
     gap: 12,
     paddingHorizontal: 16,
     paddingVertical: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: 'transparent',
   },
+  rowSelected: { borderLeftColor: colors.accent, backgroundColor: '#F2F7F6' },
+  split: { flex: 1, flexDirection: 'row', backgroundColor: colors.paper },
+  splitList: { flex: 1, minWidth: 0 },
+  splitPane: {
+    width: 452,
+    borderLeftWidth: 1,
+    borderLeftColor: colors.border,
+    backgroundColor: colors.card,
+  },
+  splitEmpty: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   thumb: {
     width: 96,
     height: 60,

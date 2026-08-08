@@ -130,7 +130,7 @@ export default function Settings() {
 
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.paper },
-  scroll: { padding: 16, gap: 12, paddingBottom: 32 },
+  scroll: { padding: 16, gap: 12, paddingBottom: 32, maxWidth: 720, width: '100%', alignSelf: 'center' },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   title: { fontSize: 17, fontFamily: fonts.sansSemiBold, color: colors.ink },
   addBtn: {

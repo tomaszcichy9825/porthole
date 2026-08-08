@@ -58,6 +58,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "8b8b8a6b-51d3-4527-ae4c-91eede2efd70"
+      }
+    },
+    "owner": "cichyt"
   }
 }
