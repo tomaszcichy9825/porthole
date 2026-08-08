@@ -147,13 +147,16 @@ function EventRow({
     hour: '2-digit',
     minute: '2-digit',
   });
-  const dur = event.end_time ? `${Math.round(event.end_time - event.start_time)} s` : 'ongoing';
+  const dur = event.end_time ? `0:${String(Math.round(event.end_time - event.start_time)).padStart(2, '0')}` : 'live';
   const score = event.data?.top_score ?? event.top_score;
 
   return (
     <Pressable style={[s.row, selected && s.rowSelected]} onPress={onPress}>
       <View style={s.thumb}>
         <Image source={{ uri: thumbUrl, headers }} style={StyleSheet.absoluteFill} contentFit="cover" />
+        <View style={s.durBadge}>
+          <Text style={s.durText}>{dur}</Text>
+        </View>
       </View>
       <View style={s.rowMain}>
         <View style={s.labelRow}>
@@ -184,6 +187,9 @@ const s = StyleSheet.create({
     gap: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
+    backgroundColor: colors.card,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
   },
   title: { fontSize: 17, fontFamily: fonts.sansSemiBold, color: colors.ink },
   filters: {
@@ -191,7 +197,10 @@ const s = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 6,
     paddingHorizontal: 16,
-    paddingBottom: 8,
+    paddingVertical: 8,
+    backgroundColor: colors.card,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderSoft,
   },
   day: {
     paddingHorizontal: 16,
@@ -235,6 +244,16 @@ const s = StyleSheet.create({
   label: { fontSize: 13.5, fontFamily: fonts.sansSemiBold, color: colors.ink },
   sub: { fontSize: 12, color: colors.textFaint, fontFamily: fonts.sans },
   rowRight: { alignItems: 'flex-end', gap: 4 },
+  durBadge: {
+    position: 'absolute',
+    right: 4,
+    bottom: 4,
+    backgroundColor: 'rgba(9,12,13,0.78)',
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+  },
+  durText: { color: '#fff', fontFamily: fonts.mono, fontSize: 9.5 },
   time: { fontSize: 12.5, color: colors.textBody },
   empty: {
     textAlign: 'center',
