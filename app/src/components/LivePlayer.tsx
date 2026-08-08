@@ -18,10 +18,12 @@ try {
 export function LivePlayer({
   rtspUrl,
   snapshotUrl,
+  headers,
   style,
 }: {
   rtspUrl: string;
   snapshotUrl: string;
+  headers?: Record<string, string>;
   style?: object;
 }) {
   const [vlcFailed, setVlcFailed] = useState(false);
@@ -48,7 +50,7 @@ export function LivePlayer({
   return (
     <View style={[s.fill, style]}>
       <Image
-        source={{ uri: `${snapshotUrl}${snapshotUrl.includes('?') ? '&' : '?'}t=${tick}` }}
+        source={{ uri: `${snapshotUrl}${snapshotUrl.includes('?') ? '&' : '?'}t=${tick}`, headers }}
         style={StyleSheet.absoluteFill}
         contentFit="contain"
       />

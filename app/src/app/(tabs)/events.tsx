@@ -98,6 +98,7 @@ export default function Events() {
           <EventRow
             event={item}
             thumbUrl={fg.eventThumbUrl(item.id)}
+            headers={fg.authHeaders}
             selected={wide && item.id === selectedId}
             onPress={() =>
               wide
@@ -132,11 +133,13 @@ export default function Events() {
 function EventRow({
   event,
   thumbUrl,
+  headers,
   selected = false,
   onPress,
 }: {
   event: FrigateEvent;
   thumbUrl: string;
+  headers?: Record<string, string>;
   selected?: boolean;
   onPress: () => void;
 }) {
@@ -150,7 +153,7 @@ function EventRow({
   return (
     <Pressable style={[s.row, selected && s.rowSelected]} onPress={onPress}>
       <View style={s.thumb}>
-        <Image source={{ uri: thumbUrl }} style={StyleSheet.absoluteFill} contentFit="cover" />
+        <Image source={{ uri: thumbUrl, headers }} style={StyleSheet.absoluteFill} contentFit="cover" />
       </View>
       <View style={s.rowMain}>
         <View style={s.labelRow}>

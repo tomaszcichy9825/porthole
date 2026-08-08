@@ -39,12 +39,12 @@ export default function CameraConsole() {
   const { data: events } = useEvents({ camera: name, after: windowStart, limit: 100 });
 
   // VOD window: from the seek point to (near) now; segments need ~30 s to finalise.
-  const vodUrl = useMemo(() => {
+  const vodSource = useMemo(() => {
     if (!fg || !name || playhead === null) return null;
-    return fg.recordingHlsUrl(name, playhead, now - 30);
+    return { uri: fg.recordingHlsUrl(name, playhead, now - 30), headers: fg.authHeaders };
   }, [fg, name, playhead, now]);
 
-  const player = useVideoPlayer(vodUrl, (p) => {
+  const player = useVideoPlayer(vodSource, (p) => {
     p.play();
   });
 
@@ -98,6 +98,7 @@ export default function CameraConsole() {
           <LivePlayer
             rtspUrl={fg.liveRtspUrl(name, fullscreenQuality === 'sub')}
             snapshotUrl={fg.snapshotUrl(name)}
+            headers={fg.authHeaders}
             style={s.video}
           />
         ) : (

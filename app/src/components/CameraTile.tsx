@@ -10,12 +10,14 @@ import { colors, fonts } from '@/theme';
 export function CameraTile({
   name,
   snapshotUrl,
+  headers,
   resolution,
   onPress,
   refreshMs = 5000,
 }: {
   name: string;
   snapshotUrl: string;
+  headers?: Record<string, string>;
   resolution?: string;
   onPress: () => void;
   refreshMs?: number;
@@ -39,7 +41,7 @@ export function CameraTile({
         </View>
       ) : (
         <Image
-          source={{ uri: `${snapshotUrl}${snapshotUrl.includes('?') ? '&' : '?'}t=${tick}` }}
+          source={{ uri: `${snapshotUrl}${snapshotUrl.includes('?') ? '&' : '?'}t=${tick}`, headers }}
           style={StyleSheet.absoluteFill}
           contentFit="cover"
           transition={150}
