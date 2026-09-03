@@ -15,10 +15,14 @@ export default function Cameras() {
   const fg = useFrigate();
   const { server, reach } = useActiveServer();
   const refreshReachability = useServers((s) => s.refreshReachability);
+  const gridQuality = useServers((s) => s.gridQuality);
   const { cameras, data: config, isLoading, refetch, isRefetching } = useCameras();
 
   const wide = useWide();
-  const [columns, setColumns] = useState<'1' | '2' | '3'>(wide ? '3' : '2');
+  const [columnsPref, setColumns] = useState<'1' | '2' | '3'>(wide ? '3' : '2');
+  // Three columns is a desktop-only option; a rotation back to narrow must
+  // not leave the grid on a column count the switcher no longer offers.
+  const columns = !wide && columnsPref === '3' ? '2' : columnsPref;
   const [group, setGroup] = useState<string>('All');
 
   const serverId = server?.id;
@@ -95,13 +99,13 @@ export default function Cameras() {
           <Text style={s.empty}>{isLoading ? 'Loading cameras…' : 'No cameras found.'}</Text>
         }
         renderItem={({ item }) => {
-          const detect = config?.cameras[item]?.detect;
           return (
             <CameraTile
               name={item}
+              rtspUrl={fg.liveRtspUrl(item, gridQuality === 'sub')}
               snapshotUrl={fg.snapshotUrl(item, 480)}
               headers={fg.authHeaders}
-              resolution={detect ? `${detect.width}×${detect.height}` : undefined}
+              resolution={gridQuality}
               onPress={() => router.push({ pathname: '/camera/[name]', params: { name: item } })}
             />
           );

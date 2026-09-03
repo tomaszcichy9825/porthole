@@ -33,10 +33,18 @@ type ServersState = {
   tokens: Record<string, string | null>;
   gridQuality: StreamQuality;
   fullscreenQuality: StreamQuality;
+  // One mute setting for every player, remembered across launches. Cameras
+  // are usually opened in company, so silence is the safe default.
+  muted: boolean;
+  // Most cameras burn a timestamp into the picture already, so Porthole's
+  // own stage clock is opt-in.
+  showClock: boolean;
   addServer: (s: Omit<ServerConfig, 'id'>) => string;
   removeServer: (id: string) => void;
   setActive: (id: string) => void;
   setQuality: (which: 'grid' | 'fullscreen', q: StreamQuality) => void;
+  setMuted: (m: boolean) => void;
+  setShowClock: (v: boolean) => void;
   setToken: (id: string, token: string | null) => void;
   refreshReachability: (id: string) => Promise<Reachability | null>;
   // Mint a fresh JWT from stored credentials; no-op for cred-less servers.
@@ -52,6 +60,8 @@ export const useServers = create<ServersState>()(
       tokens: {},
       gridQuality: 'sub',
       fullscreenQuality: 'main',
+      muted: true,
+      showClock: false,
 
       addServer: (s) => {
         const id = `srv-${Date.now().toString(36)}`;
@@ -76,6 +86,10 @@ export const useServers = create<ServersState>()(
 
       setQuality: (which, q) =>
         set(which === 'grid' ? { gridQuality: q } : { fullscreenQuality: q }),
+
+      setMuted: (m) => set({ muted: m }),
+
+      setShowClock: (v) => set({ showClock: v }),
 
       setToken: (id, token) => set((st) => ({ tokens: { ...st.tokens, [id]: token } })),
 
@@ -111,6 +125,8 @@ export const useServers = create<ServersState>()(
         activeId: s.activeId,
         gridQuality: s.gridQuality,
         fullscreenQuality: s.fullscreenQuality,
+        muted: s.muted,
+        showClock: s.showClock,
       }),
     },
   ),

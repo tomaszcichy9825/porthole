@@ -3,13 +3,22 @@ import { useMemo } from 'react';
 
 import type { EventsQuery } from '@/lib/frigate';
 import { createClient } from '@/lib/frigate';
-import { useActiveServer } from '@/stores/servers';
+import { useActiveServer, useServers } from '@/stores/servers';
 
 export const useFrigate = () => {
-  const { server, baseUrl, token } = useActiveServer();
+  const { server, baseUrl } = useActiveServer();
+  const id = server?.id;
   return useMemo(
-    () => (baseUrl ? createClient(baseUrl, server?.rtspPort, token) : null),
-    [baseUrl, server?.rtspPort, token],
+    () =>
+      baseUrl && id
+        ? createClient(
+            baseUrl,
+            server?.rtspPort,
+            () => useServers.getState().tokens[id] ?? null,
+            () => useServers.getState().ensureAuth(id),
+          )
+        : null,
+    [baseUrl, id, server?.rtspPort],
   );
 };
 
@@ -51,7 +60,34 @@ export const useEvent = (id: string) => {
   });
 };
 
-export const useRecordingSegments = (camera: string | undefined, after: number, before: number) => {
+// Previews are optional (older Frigate, or `record.preview` disabled), so a
+// failure resolves to an empty list and the scrubber falls back to stills.
+export const usePreviews = (camera: string | undefined, after: number, before: number) => {
+  const fg = useFrigate();
+  return useQuery({
+    queryKey: ['previews', fg?.api, camera, Math.floor(after / 300), Math.floor(before / 300)],
+    queryFn: () => fg!.getPreviews(camera!, after, before).catch(() => []),
+    enabled: !!fg && !!camera,
+    staleTime: 60_000,
+    retry: false,
+  });
+};
+
+// About 240 buckets across the window, whatever its length; Frigate's
+// minimum bucket is 30 s. Optional like previews: no data, no bars.
+export const useMotion = (camera: string | undefined, after: number, before: number) => {
+  const fg = useFrigate();
+  const scale = Math.max(30, Math.round((before - after) / 600));
+  return useQuery({
+    queryKey: ['motion', fg?.api, camera, scale, Math.floor(after / scale), Math.floor(before / scale)],
+    queryFn: () => fg!.getMotionActivity(camera!, after, before, scale).catch(() => []),
+    enabled: !!fg && !!camera,
+    staleTime: 60_000,
+    retry: false,
+  });
+};
+
+export const useRecordingSegments =(camera: string | undefined, after: number, before: number) => {
   const fg = useFrigate();
   return useQuery({
     queryKey: ['recordings', fg?.api, camera, Math.floor(after / 60), Math.floor(before / 60)],

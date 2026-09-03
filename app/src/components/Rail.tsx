@@ -62,9 +62,13 @@ export function Rail() {
         );
       })}
       <View style={{ flex: 1 }} />
-      <View style={s.serverBox}>
+      <Pressable
+        style={s.serverBox}
+        onPress={() => router.navigate('/(tabs)/settings')}
+        accessibilityLabel={`${server?.name ?? 'Server'} - open settings`}
+      >
         <Text style={s.serverBoxText}>{initials}</Text>
-      </View>
+      </Pressable>
     </View>
   );
 }

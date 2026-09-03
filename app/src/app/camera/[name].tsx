@@ -1,39 +1,57 @@
-import { useVideoPlayer, VideoView } from 'expo-video';
+import { useEvent, useEventListener } from 'expo';
+import { useVideoPlayer, VideoView, type VideoPlayer } from 'expo-video';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 
 import { LivePlayer } from '@/components/LivePlayer';
+import { ScrubPreview, type ScrubPreviewHandle } from '@/components/ScrubPreview';
 import { Timeline } from '@/components/Timeline';
 import { Mono } from '@/components/ui';
 import { useWide } from '@/lib/layout';
-import { useCameras, useEvents, useFrigate, useRecordingSegments } from '@/lib/queries';
+import { useCameras, useFrigate, usePreviews, useRecordingSegments } from '@/lib/queries';
 import { useActiveServer, useServers } from '@/stores/servers';
 import { colors, fonts, radius } from '@/theme';
 
-const WINDOWS = { '24 h': 24 * 3600, '12 h': 12 * 3600, '1 h': 3600, '5 m': 300 } as const;
-type WindowKey = keyof typeof WINDOWS;
 const RATES = ['1×', '2×', '4×', '8×'] as const;
 
 const titleOf = (n: string) => n.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
 
-// Isolated so the per-second tick re-renders this Text only, not the console.
-function StageClock({ playhead, style }: { playhead: number | null; style: object }) {
-  const [clock, setClock] = useState(() => Date.now());
-  useEffect(() => {
-    if (playhead !== null) return;
-    const t = setInterval(() => setClock(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, [playhead]);
-  const text =
-    playhead === null
-      ? new Date(clock).toLocaleTimeString(undefined, { hour12: false })
-      : new Date(playhead * 1000).toLocaleTimeString(undefined, { hour12: false });
-  return <Text style={style}>{text}</Text>;
-}
+type StageClockHandle = { scrub: (epoch: number | null) => void };
+
+// Wall clock while live, recorded time while playing back, dragged time while
+// scrubbing. Scrub positions arrive several times a second, so they come in
+// by ref and re-render only this Text, never the console.
+const StageClock = forwardRef<StageClockHandle, { playhead: number | null; style: object }>(
+  function StageClock({ playhead, style }, ref) {
+    const [wall, setWall] = useState(() => Date.now() / 1000);
+    const [scrub, setScrub] = useState<number | null>(null);
+
+    useImperativeHandle(ref, () => ({ scrub: setScrub }), []);
+
+    useEffect(() => {
+      if (playhead !== null) return;
+      const t = setInterval(() => setWall(Date.now() / 1000), 1000);
+      return () => clearInterval(t);
+    }, [playhead]);
+
+    const at = scrub ?? playhead ?? wall;
+    return <Text style={style}>{new Date(at * 1000).toLocaleTimeString(undefined, { hour12: false })}</Text>;
+  },
+);
+
+// One HLS manifest covers at most an hour: nginx's vod module is slow to
+// build long playlists and 503s on windows that start before any media.
+const VOD_CHUNK = 3600;
+type Chunk = { start: number; end: number };
+const chunkFrom = (start: number, now: number): Chunk => ({ start, end: Math.min(start + VOD_CHUNK, now - 30) });
+// expo-video's documented API is assignment on the player instance.
+const seekPlayer = (p: VideoPlayer, seconds: number) => {
+  p.currentTime = seconds;
+};
 
 // Design screen 1c: one Cameras console, now/then toggle, always-there
 // timeline. Dragging back moves you into the past; NOW returns to live.
@@ -44,14 +62,21 @@ export default function CameraConsole() {
   const { reach } = useActiveServer();
   const fullscreenQuality = useServers((s) => s.fullscreenQuality);
   const setQuality = useServers((s) => s.setQuality);
-  const { cameras, data: config } = useCameras();
+  const muted = useServers((s) => s.muted);
+  const setMuted = useServers((s) => s.setMuted);
+  const showClock = useServers((s) => s.showClock);
+  const { cameras } = useCameras();
 
-  // null = live; an epoch = "then" playback starting there. The playhead is
-  // where the user is; chunkStart anchors the loaded HLS manifest - seeks
-  // inside the chunk are native player seeks, not manifest rebuilds.
-  const [playhead, setPlayhead] = useState<number | null>(at ? Number(at) : null);
-  const [chunkStart, setChunkStart] = useState<number | null>(at ? Number(at) : null);
-  const [windowKey, setWindowKey] = useState<WindowKey>('12 h');
+  // null = live; an epoch = "then" playback at that moment. The playhead
+  // follows playback; the chunk is the loaded HLS manifest and is fixed when
+  // set - seeks inside it are native player seeks, not manifest rebuilds.
+  // (Deriving the chunk end from the ticking clock rebuilt the player every
+  // 30 s, which is why playback kept restarting.)
+  const startAt = at ? Number(at) : null;
+  const [playhead, setPlayhead] = useState<number | null>(startAt);
+  const [chunk, setChunk] = useState<Chunk | null>(() =>
+    startAt !== null ? chunkFrom(startAt, Math.floor(Date.now() / 1000)) : null,
+  );
   const [rate, setRate] = useState<(typeof RATES)[number]>('1×');
 
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
@@ -61,15 +86,22 @@ export default function CameraConsole() {
   }, []);
   const live = playhead === null;
 
-  const windowStart = now - WINDOWS[windowKey];
-  const { data: segments } = useRecordingSegments(name, windowStart, now);
-  const { data: events } = useEvents({ camera: name, after: windowStart, limit: 100 });
+  // The stretch of time the timeline has loaded; segments and previews for
+  // seeking come from the same queries it uses.
+  const [range, setRange] = useState(() => ({ start: now - 3600, end: now }));
+  const onRangeChange = useCallback((start: number, end: number) => setRange({ start, end }), []);
+  const { data: segments } = useRecordingSegments(name, range.start, range.end);
+  const { data: previews } = usePreviews(name, range.start, range.end);
 
-  // A VOD playlist whose window starts before any recorded media 503s in
-  // nginx's vod module, and an hours-long manifest is slow to build. Snap
-  // the seek into the recorded segments and serve at most an hour per chunk.
+  // Real size of the stream on the stage, as VLC reports it (Frigate's
+  // config only knows the detect resolution).
+  const [streamSize, setStreamSize] = useState<{ url: string; w: number; h: number } | null>(null);
+  const onVideoSize = useCallback((url: string, w: number, h: number) => setStreamSize({ url, w, h }), []);
+
+  // Snap a seek into the recorded segments of the loaded stretch. Outside
+  // it we know nothing, so the time is taken as-is.
   const snapToRecording = (t: number): number | null => {
-    if (!segments?.length) return t;
+    if (!segments?.length || t < range.start) return t;
     for (const seg of segments) {
       if (t >= seg.start_time && t <= seg.end_time) return t;
       if (seg.start_time > t) return seg.start_time;
@@ -77,41 +109,91 @@ export default function CameraConsole() {
     return null; // after the last segment: nothing recorded there yet
   };
 
-  const VOD_CHUNK = 3600;
-  const chunkEnd = chunkStart !== null ? Math.min(chunkStart + VOD_CHUNK, now - 30) : null;
   const vodSource = useMemo(() => {
-    if (!fg || !name || chunkStart === null || chunkEnd === null || chunkEnd <= chunkStart) return null;
-    return { uri: fg.recordingHlsUrl(name, chunkStart, chunkEnd), headers: fg.authHeaders };
-  }, [fg, name, chunkStart, chunkEnd]);
+    if (!fg || !name || !chunk || chunk.end <= chunk.start) return null;
+    return { uri: fg.recordingHlsUrl(name, chunk.start, chunk.end), headers: fg.authHeaders };
+  }, [fg, name, chunk]);
 
+  // expo-video makes a fresh player whenever the source changes, so the
+  // setup runs once per chunk. timeUpdate is off by default (interval 0).
   const player = useVideoPlayer(vodSource, (p) => {
+    p.timeUpdateEventInterval = 1;
     p.play();
   });
+  const { status } = useEvent(player, 'statusChange', { status: player.status });
+  const { isPlaying } = useEvent(player, 'playingChange', { isPlaying: player.playing });
 
-  const setSpeed = (r: (typeof RATES)[number]) => {
-    setRate(r);
+  // Scrub preview: dragging the timeline moves a preview clip, never the VOD
+  // player, so the drag runs at finger speed and the manifest is rebuilt once
+  // on release. Positions go in through a ref, so a drag re-renders nothing
+  // here - only the boolean that uncovers the preview does.
+  const [scrubbing, setScrubbing] = useState(false);
+  const preview = useRef<ScrubPreviewHandle>(null);
+  const clock = useRef<StageClockHandle>(null);
+
+  const onScrub = useCallback(
+    (t: number | null) => {
+      clock.current?.scrub(t);
+      if (t === null) {
+        setScrubbing(false);
+        return;
+      }
+      setScrubbing(true);
+      preview.current?.seek(Math.min(t, now - 60));
+    },
+    [now],
+  );
+
+  useEffect(() => {
     // expo-video's documented API is assignment on the player instance.
     // eslint-disable-next-line react-hooks/immutability
-    player.playbackRate = Number(r.replace('×', ''));
+    player.playbackRate = Number(rate.replace('×', ''));
+  }, [rate, player]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/immutability
+    player.muted = muted;
+  }, [muted, player]);
+
+  // Playback moves the playhead (timeline marker and clock) once a second.
+  useEventListener(player, 'timeUpdate', ({ currentTime }) => {
+    if (!chunk || scrubbing) return;
+    const t = Math.floor(chunk.start + currentTime);
+    setPlayhead((p) => (p !== null && Math.floor(p) === t ? p : t));
+  });
+
+  const goLive = () => {
+    setPlayhead(null);
+    setChunk(null);
   };
 
   const seekTo = (t: number) => {
+    if (t >= now - 15) {
+      goLive(); // scrolled up to the present
+      return;
+    }
     const snapped = snapToRecording(Math.min(t, now - 60));
     if (snapped === null) {
-      setPlayhead(null);
-      setChunkStart(null); // nothing recorded there: return to live
+      goLive(); // nothing recorded there
       return;
     }
     const target = Math.min(snapped, now - 60);
     setPlayhead(target);
-    if (chunkStart !== null && chunkEnd !== null && target >= chunkStart && target < chunkEnd - 5) {
-      // Inside the loaded manifest: a native seek, no player rebuild.
-      // eslint-disable-next-line react-hooks/immutability
-      player.currentTime = target - chunkStart;
+    preview.current?.seek(target); // hold the preview over the stage while the VOD loads
+    if (chunk && target >= chunk.start && target < chunk.end - 5) {
+      seekPlayer(player, target - chunk.start);
     } else {
-      setChunkStart(target);
+      setChunk(chunkFrom(target, now));
     }
   };
+
+  // An hour's manifest ran out: continue into the next one, or catch up to
+  // live if we have reached it.
+  useEventListener(player, 'playToEnd', () => {
+    if (!chunk) return;
+    if (chunk.end >= now - 90) goLive();
+    else seekTo(chunk.end);
+  });
 
   const seekBy = (seconds: number) => {
     if (playhead === null) {
@@ -124,30 +206,31 @@ export default function CameraConsole() {
 
   if (!fg || !name) return null;
 
-  const detect = config?.cameras[name]?.detect;
-  const resText = detect ? `${detect.width}×${detect.height}` : '';
+  // Cover the stage while dragging, and afterwards until the new manifest is
+  // ready - otherwise the video goes black for the length of the VOD load.
+  const showPreview = scrubbing || (!live && status !== 'readyToPlay');
+  const vodFailed = !live && status === 'error';
+
+  const liveUrl = fg.liveRtspUrl(name, fullscreenQuality === 'sub');
+  const resText = streamSize?.url === liveUrl ? `${streamSize.w}×${streamSize.h}` : '';
 
   return (
-    <SafeAreaView style={s.safe} edges={wide ? [] : ['top']}>
+    <SafeAreaView style={s.safe} edges={['top']}>
       {/* top bar */}
       <View style={s.topBar}>
         <Pressable onPress={() => router.back()} style={s.back}>
           <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={colors.textLabel} strokeWidth={2.2}>
             <Path d="M15 6l-6 6 6 6" />
           </Svg>
-          <Text style={s.backText}>All cameras</Text>
+          {wide ? <Text style={s.backText}>All cameras</Text> : null}
         </Pressable>
         <View style={s.vDivider} />
-        <Text style={s.title}>{titleOf(name)}</Text>
+        <Text style={s.title} numberOfLines={1}>
+          {titleOf(name)}
+        </Text>
 
         <View style={s.modeToggle}>
-          <Pressable
-            onPress={() => {
-              setPlayhead(null);
-              setChunkStart(null);
-            }}
-            style={[s.modeItem, live && s.modeItemActive]}
-          >
+          <Pressable onPress={goLive} style={[s.modeItem, live && s.modeItemActive]}>
             {live ? <View style={s.liveDot} /> : null}
             <Text style={[s.modeText, live && s.modeTextActive]}>Now</Text>
           </Pressable>
@@ -155,7 +238,7 @@ export default function CameraConsole() {
             <Text style={[s.modeText, !live && s.modeTextActive]}>Then</Text>
           </Pressable>
         </View>
-        {wide ? <Text style={s.hint}>or just tap the timeline</Text> : null}
+        {wide ? <Text style={s.hint}>or scroll the timeline</Text> : null}
         <View style={{ flex: 1 }} />
 
         <View style={s.qualityToggle}>
@@ -183,24 +266,31 @@ export default function CameraConsole() {
 
       <View style={s.body}>
         {/* stage */}
-        <View style={s.stage}>
+        {/* Desktop: the stage takes whatever height the controls leave and
+            letterboxes the video inside; phones keep a 16:9 box. */}
+        <View style={[s.stage, wide ? s.stageWide : s.stageNarrow]}>
           {live ? (
             <LivePlayer
-              rtspUrl={fg.liveRtspUrl(name, fullscreenQuality === 'sub')}
+              rtspUrl={liveUrl}
               snapshotUrl={fg.snapshotUrl(name)}
               headers={fg.authHeaders}
               style={s.video}
+              muted={muted}
+              onVideoSize={onVideoSize}
             />
           ) : (
             <VideoView player={player} style={s.video} nativeControls={false} contentFit="contain" />
           )}
+          {/* Stays mounted so its clip is already open when a drag starts;
+              only its opacity changes, which costs nothing mid-drag. */}
+          <View style={[StyleSheet.absoluteFill, !showPreview && s.hidden]} pointerEvents="none">
+            <ScrubPreview ref={preview} fg={fg} camera={name} clips={previews ?? []} />
+          </View>
           <View style={s.stageOverlay} pointerEvents="none">
             <View style={s.stageTopRow}>
-              {resText ? (
+              {live ? (
                 <View style={s.stageBadgeDark}>
-                  <Mono style={s.stageBadgeText}>
-                    {resText} · {fullscreenQuality}
-                  </Mono>
+                  <Mono style={s.stageBadgeText}>{resText ? `${resText} · ${fullscreenQuality}` : fullscreenQuality}</Mono>
                 </View>
               ) : (
                 <View />
@@ -210,13 +300,13 @@ export default function CameraConsole() {
                   <Text style={s.liveBadgeText}>LIVE</Text>
                 </View>
               ) : (
-                <View style={s.stageBadgeDark}>
-                  <Mono style={s.stageBadgeText}>{rate} playback</Mono>
+                <View style={[s.stageBadgeDark, vodFailed && s.stageBadgeErr]}>
+                  <Mono style={s.stageBadgeText}>{vodFailed ? 'no recording here' : `${rate} playback`}</Mono>
                 </View>
               )}
             </View>
             <View style={s.stageBottomRow}>
-              <StageClock playhead={playhead} style={s.clock} />
+              {showClock ? <StageClock ref={clock} playhead={playhead} style={s.clock} /> : null}
             </View>
           </View>
         </View>
@@ -231,7 +321,8 @@ export default function CameraConsole() {
                 style={[s.thumb, c === name && s.thumbActive]}
               >
                 <Image
-                  source={{ uri: fg.snapshotUrl(c, 180), headers: fg.authHeaders }}
+                  // `now` ticks every 30 s: refreshes the strip and retries a failed load.
+                  source={{ uri: `${fg.snapshotUrl(c, 180)}&t=${now}`, headers: fg.authHeaders }}
                   style={StyleSheet.absoluteFill}
                   contentFit="cover"
                 />
@@ -248,8 +339,8 @@ export default function CameraConsole() {
         {/* transport */}
         <View style={s.transport}>
           <View style={s.tGroup}>
-            <Pressable style={s.tBtn} onPress={() => seekBy(-30)}>
-              <Text style={s.tBtnText}>Rewind 30 s</Text>
+            <Pressable style={wide ? s.tBtn : s.tBtnSquare} onPress={() => seekBy(-30)}>
+              {wide ? <Text style={s.tBtnText}>Rewind 30 s</Text> : <Mono style={s.tBtnMono}>−30</Mono>}
             </Pressable>
             <View style={s.tDivider} />
             <Pressable style={s.tBtnSquare} onPress={() => seekBy(-10)}>
@@ -262,11 +353,11 @@ export default function CameraConsole() {
                   seekBy(-30);
                   return;
                 }
-                if (player.playing) player.pause();
+                if (isPlaying) player.pause();
                 else player.play();
               }}
             >
-              {!live && player.playing ? (
+              {!live && isPlaying ? (
                 <Svg width={15} height={15} viewBox="0 0 24 24" fill="#fff">
                   <Path d="M7 4h4v16H7zM13 4h4v16h-4z" />
                 </Svg>
@@ -279,13 +370,43 @@ export default function CameraConsole() {
             <Pressable style={s.tBtnSquare} onPress={() => seekBy(10)} disabled={live}>
               <Mono style={[s.tBtnMono, live && s.disabled]}>+10</Mono>
             </Pressable>
+            <View style={s.tDivider} />
+            <Pressable
+              style={s.tBtnSquare}
+              onPress={() => setMuted(!muted)}
+              accessibilityLabel={muted ? 'Unmute' : 'Mute'}
+            >
+              <Svg
+                width={17}
+                height={17}
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke={muted ? colors.textMuted : colors.accent}
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <Path d="M4 9v6h4l5 4V5L8 9H4z" />
+                {muted ? (
+                  <>
+                    <Path d="M17 9.5l5 5" />
+                    <Path d="M22 9.5l-5 5" />
+                  </>
+                ) : (
+                  <>
+                    <Path d="M16.5 8.8a4.5 4.5 0 0 1 0 6.4" />
+                    <Path d="M19.2 6.2a8 8 0 0 1 0 11.6" />
+                  </>
+                )}
+              </Svg>
+            </Pressable>
           </View>
 
           <View style={s.tGroup}>
             {RATES.map((r) => (
               <Pressable
                 key={r}
-                onPress={() => setSpeed(r)}
+                onPress={() => setRate(r)}
                 disabled={live}
                 style={[s.rateItem, !live && r === rate && s.rateItemActive]}
               >
@@ -312,25 +433,17 @@ export default function CameraConsole() {
               ))}
             </View>
           ) : null}
-
-          <View style={s.tGroup}>
-            {(Object.keys(WINDOWS) as WindowKey[]).map((w) => (
-              <Pressable key={w} onPress={() => setWindowKey(w)} style={[s.winItem, w === windowKey && s.winItemActive]}>
-                <Text style={[s.winText, w === windowKey && s.winTextActive]}>{w}</Text>
-              </Pressable>
-            ))}
-          </View>
         </View>
 
         {/* timeline panel */}
         <View style={s.timelinePanel}>
           <Timeline
-            windowStart={windowStart}
-            windowEnd={now}
-            segments={segments ?? []}
-            events={events ?? []}
+            camera={name}
+            now={now}
             playhead={playhead}
             onSeek={seekTo}
+            onScrub={onScrub}
+            onRangeChange={onRangeChange}
           />
         </View>
       </View>
@@ -353,7 +466,7 @@ const s = StyleSheet.create({
   back: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingVertical: 8 },
   backText: { fontSize: 13, fontFamily: fonts.sansSemiBold, color: colors.textLabel },
   vDivider: { width: 1, height: 20, backgroundColor: colors.border },
-  title: { fontSize: 16, fontFamily: fonts.sansSemiBold, color: colors.ink, letterSpacing: -0.2 },
+  title: { fontSize: 16, fontFamily: fonts.sansSemiBold, color: colors.ink, letterSpacing: -0.2, flexShrink: 1 },
   modeToggle: {
     flexDirection: 'row',
     backgroundColor: colors.fill,
@@ -403,12 +516,13 @@ const s = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
     backgroundColor: colors.tile,
-    aspectRatio: 16 / 9,
-    maxHeight: '55%',
     alignSelf: 'center',
     width: '100%',
   },
+  stageNarrow: { aspectRatio: 16 / 9, maxHeight: '55%' },
+  stageWide: { flex: 1 },
   video: { flex: 1 },
+  hidden: { opacity: 0 },
   stageOverlay: {
     position: 'absolute',
     top: 0,
@@ -426,6 +540,7 @@ const s = StyleSheet.create({
     paddingVertical: 7,
   },
   stageBadgeText: { fontSize: 12, color: colors.videoText },
+  stageBadgeErr: { backgroundColor: 'rgba(180,69,31,0.85)' },
   liveBadge: { backgroundColor: colors.live, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7 },
   liveBadgeText: { color: colors.liveInk, fontSize: 12, fontFamily: fonts.sansBold, letterSpacing: 0.6 },
   stageBottomRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
@@ -489,10 +604,6 @@ const s = StyleSheet.create({
   rateText: { fontSize: 12, color: '#C3CCD0', fontFamily: fonts.monoSemiBold },
   rateTextActive: { color: '#fff' },
   disabled: { color: '#C3CCD0' },
-  winItem: { paddingHorizontal: 11, paddingVertical: 9, borderRadius: 8 },
-  winItemActive: { backgroundColor: colors.accentSoft },
-  winText: { fontSize: 12, fontFamily: fonts.sansSemiBold, color: colors.textMuted },
-  winTextActive: { color: colors.accent },
 
   legend: { flexDirection: 'row', gap: 14, paddingHorizontal: 4 },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },

@@ -34,12 +34,15 @@ export default function Events() {
 
   const [after] = useState(() => Math.floor(Date.now() / 1000) - 7 * 86_400);
   const { data: events, isLoading } = useEvents({ after, limit: 200, label, camera });
+  // Chips count the unfiltered list, so picking a label doesn't make the
+  // other labels vanish. Same query as above when no label is set.
+  const { data: allEvents } = useEvents({ after, limit: 200, camera });
 
   const labelCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    (events ?? []).forEach((e) => counts.set(e.label, (counts.get(e.label) ?? 0) + 1));
+    (allEvents ?? []).forEach((e) => counts.set(e.label, (counts.get(e.label) ?? 0) + 1));
     return [...counts.entries()].sort((a, b) => b[1] - a[1]);
-  }, [events]);
+  }, [allEvents]);
 
   const sections = useMemo(() => {
     const byDay = new Map<string, FrigateEvent[]>();
@@ -147,7 +150,8 @@ function EventRow({
     hour: '2-digit',
     minute: '2-digit',
   });
-  const dur = event.end_time ? `0:${String(Math.round(event.end_time - event.start_time)).padStart(2, '0')}` : 'live';
+  const secs = event.end_time ? Math.round(event.end_time - event.start_time) : null;
+  const dur = secs === null ? 'live' : `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
   const score = event.data?.top_score ?? event.top_score;
 
   return (

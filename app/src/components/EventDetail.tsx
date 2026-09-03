@@ -4,6 +4,7 @@ import { Alert, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'rea
 
 import { Card, Mono } from '@/components/ui';
 import { useEvent, useFrigate } from '@/lib/queries';
+import { useServers } from '@/stores/servers';
 import { colors, fonts, radius } from '@/theme';
 
 // Design screen 2c right pane: the selected event, playing natively.
@@ -14,7 +15,10 @@ export function EventDetail({ id, onDeleted }: { id: string; onDeleted?: () => v
   const { data: event } = useEvent(id);
 
   const clipSource = fg && id ? { uri: fg.eventClipUrl(id), headers: fg.authHeaders } : null;
+  // Setup-only, so the native controls can still unmute this one clip
+  // without rewriting the remembered setting.
   const player = useVideoPlayer(clipSource, (p) => {
+    p.muted = useServers.getState().muted;
     p.play();
   });
 

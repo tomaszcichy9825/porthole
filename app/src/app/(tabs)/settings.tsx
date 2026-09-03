@@ -1,7 +1,7 @@
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Card, Mono, Segmented } from '@/components/ui';
@@ -10,7 +10,7 @@ import { colors, fonts, radius } from '@/theme';
 
 // Design screen 2d: servers, defaults, sponsor card, about.
 export default function Settings() {
-  const { servers, activeId, reachability, setActive, removeServer, refreshReachability, gridQuality, fullscreenQuality, setQuality } =
+  const { servers, activeId, reachability, setActive, removeServer, refreshReachability, gridQuality, fullscreenQuality, setQuality, muted, setMuted, showClock, setShowClock } =
     useServers();
   const [testing, setTesting] = useState<string | null>(null);
 
@@ -72,7 +72,15 @@ export default function Settings() {
                   </Pressable>
                 ) : null}
                 <View style={{ flex: 1 }} />
-                <Pressable style={s.removeBtn} onPress={() => removeServer(srv.id)}>
+                <Pressable
+                  style={s.removeBtn}
+                  onPress={() =>
+                    Alert.alert('Remove server', `Forget ${srv.name} and its saved login?`, [
+                      { text: 'Cancel', style: 'cancel' },
+                      { text: 'Remove', style: 'destructive', onPress: () => removeServer(srv.id) },
+                    ])
+                  }
+                >
                   <Text style={s.removeText}>Remove</Text>
                 </Pressable>
               </View>
@@ -97,6 +105,24 @@ export default function Settings() {
               options={['sub', 'main'] as const}
               value={fullscreenQuality}
               onChange={(q) => setQuality('fullscreen', q)}
+              mono
+            />
+          </View>
+          <View style={[s.pref, s.prefBorder]}>
+            <Text style={s.prefLabel}>Clock over the picture</Text>
+            <Segmented
+              options={['off', 'on'] as const}
+              value={showClock ? 'on' : 'off'}
+              onChange={(v) => setShowClock(v === 'on')}
+              mono
+            />
+          </View>
+          <View style={[s.pref, s.prefBorder]}>
+            <Text style={s.prefLabel}>Audio</Text>
+            <Segmented
+              options={['muted', 'on'] as const}
+              value={muted ? 'muted' : 'on'}
+              onChange={(v) => setMuted(v === 'muted')}
               mono
             />
           </View>
