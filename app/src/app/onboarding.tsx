@@ -27,6 +27,7 @@ export default function Onboarding() {
 
   const [localUrl, setLocalUrl] = useState('https://');
   const [remoteUrl, setRemoteUrl] = useState('');
+  const [showRemote, setShowRemote] = useState(false);
   const [name, setName] = useState('Home');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -83,7 +84,7 @@ export default function Onboarding() {
 
           <Card style={s.form}>
             <View style={s.field}>
-              <Text style={s.label}>Local address</Text>
+              <Text style={s.label}>Address</Text>
               <TextInput
                 style={s.input}
                 value={localUrl}
@@ -91,26 +92,34 @@ export default function Onboarding() {
                 autoCapitalize="none"
                 autoCorrect={false}
                 keyboardType="url"
-                placeholder="http://192.168.0.3:5000"
+                placeholder="https://frigate.example.com"
                 placeholderTextColor={colors.textGhost}
               />
             </View>
-            <View style={s.field}>
-              <View style={s.labelRow}>
-                <Text style={s.label}>Remote address</Text>
-                <Text style={s.labelHint}>optional · Tailscale, WireGuard, proxy</Text>
+            {/* One address is enough for a domain or VPN; the second is for
+                a LAN-only URL that is faster at home than the VPN one. */}
+            {showRemote ? (
+              <View style={s.field}>
+                <View style={s.labelRow}>
+                  <Text style={s.label}>Second address</Text>
+                  <Text style={s.labelHint}>tried when the first does not answer</Text>
+                </View>
+                <TextInput
+                  style={s.input}
+                  value={remoteUrl}
+                  onChangeText={setRemoteUrl}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="url"
+                  placeholder="http://100.84.12.7:5000"
+                  placeholderTextColor={colors.textGhost}
+                />
               </View>
-              <TextInput
-                style={s.input}
-                value={remoteUrl}
-                onChangeText={setRemoteUrl}
-                autoCapitalize="none"
-                autoCorrect={false}
-                keyboardType="url"
-                placeholder="http://100.84.12.7:5000"
-                placeholderTextColor={colors.textGhost}
-              />
-            </View>
+            ) : (
+              <Pressable onPress={() => setShowRemote(true)} hitSlop={8}>
+                <Text style={s.link}>Add a second address (LAN plus VPN setups)</Text>
+              </Pressable>
+            )}
             <View style={s.field}>
               <Text style={s.label}>Name</Text>
               <TextInput
@@ -208,6 +217,7 @@ const s = StyleSheet.create({
   labelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   label: { fontSize: 12.5, fontFamily: fonts.sansSemiBold, color: colors.textLabel },
   labelHint: { fontSize: 11.5, color: colors.textFaint, fontFamily: fonts.sans },
+  link: { fontSize: 12.5, fontFamily: fonts.sansSemiBold, color: colors.accent },
   row2: { flexDirection: 'row', gap: 12 },
   authHint: { fontSize: 11.5, color: colors.textFaint, fontFamily: fonts.sans, lineHeight: 16 },
   input: {

@@ -48,12 +48,12 @@ export default function Settings() {
                 ) : null}
               </View>
               <View style={s.addr}>
-                <Text style={s.addrLabel}>Local address</Text>
+                <Text style={s.addrLabel}>Address</Text>
                 <Mono style={s.addrValue}>{srv.localUrl}</Mono>
               </View>
               {srv.remoteUrl ? (
                 <View style={s.addr}>
-                  <Text style={s.addrLabel}>Remote address</Text>
+                  <Text style={s.addrLabel}>Second address</Text>
                   <Mono style={s.addrValue}>{srv.remoteUrl}</Mono>
                 </View>
               ) : null}
