@@ -14,6 +14,7 @@ import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { colors } from '@/theme';
 
@@ -41,15 +42,19 @@ export default function RootLayout() {
   if (!fontsLoaded) return null;
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          contentStyle: { backgroundColor: colors.paper },
-        }}
-      >
-        <Stack.Screen name="camera/[name]" options={{ orientation: 'default' }} />
-      </Stack>
-    </QueryClientProvider>
+    // Required for gesture-handler recognisers (the timeline scrubber) to
+    // receive touches, on Android especially.
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <QueryClientProvider client={queryClient}>
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: colors.paper },
+          }}
+        >
+          <Stack.Screen name="camera/[name]" options={{ orientation: 'default' }} />
+        </Stack>
+      </QueryClientProvider>
+    </GestureHandlerRootView>
   );
 }

@@ -1,62 +1,48 @@
-import { Image } from 'expo-image';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { LivePlayer } from '@/components/LivePlayer';
 import { LiveBadge } from '@/components/ui';
 import { colors, fonts } from '@/theme';
 
-// Grid tile. Polls latest.jpg — only the fullscreen console holds a real
-// stream (design principle: visible tiles are cheap, the console is live).
+// Grid tile: a real live stream (sub stream by default), falling back to
+// 1 fps snapshots when RTSP is out of reach.
 export function CameraTile({
   name,
+  rtspUrl,
   snapshotUrl,
   headers,
   resolution,
   onPress,
-  refreshMs = 5000,
 }: {
   name: string;
+  rtspUrl: string;
   snapshotUrl: string;
   headers?: Record<string, string>;
   resolution?: string;
   onPress: () => void;
-  refreshMs?: number;
 }) {
-  const [tick, setTick] = useState(() => Math.floor(Date.now() / refreshMs));
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    const t = setInterval(() => setTick((v) => v + 1), refreshMs);
-    return () => clearInterval(t);
-  }, [refreshMs]);
-
+  const [mode, setMode] = useState<'live' | 'snap'>('snap');
   const title = name.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
 
   return (
     <Pressable onPress={onPress} style={s.tile}>
-      {failed ? (
-        <View style={s.dead}>
-          <Text style={s.deadTitle}>{title} unreachable</Text>
-          <Text style={s.deadSub}>retrying…</Text>
-        </View>
-      ) : (
-        <Image
-          source={{ uri: `${snapshotUrl}${snapshotUrl.includes('?') ? '&' : '?'}t=${tick}`, headers }}
-          style={StyleSheet.absoluteFill}
-          contentFit="cover"
-          transition={150}
-          onError={() => setFailed(true)}
-          onLoad={() => setFailed(false)}
-        />
-      )}
-      <View style={s.overlayRow}>
+      <LivePlayer
+        rtspUrl={rtspUrl}
+        snapshotUrl={snapshotUrl}
+        headers={headers}
+        style={StyleSheet.absoluteFill}
+        compact
+        onModeChange={setMode}
+      />
+      <View style={s.overlayRow} pointerEvents="none">
         <View style={s.nameBadge}>
           <Text style={s.nameText}>{title}</Text>
         </View>
-        <LiveBadge kind="snap" />
+        <LiveBadge kind={mode} />
       </View>
       {resolution ? (
-        <View style={s.footRow}>
+        <View style={s.footRow} pointerEvents="none">
           <Text style={s.footText}>{resolution}</Text>
         </View>
       ) : null}
@@ -98,17 +84,4 @@ const s = StyleSheet.create({
     textShadowColor: 'rgba(0,0,0,0.7)',
     textShadowRadius: 8,
   },
-  dead: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: '#0E1214',
-  },
-  deadTitle: { color: '#B9C4C8', fontSize: 13, fontFamily: fonts.sansSemiBold },
-  deadSub: { color: '#7C8A8F', fontSize: 11, fontFamily: fonts.mono },
 });

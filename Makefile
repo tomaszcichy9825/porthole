@@ -35,7 +35,8 @@ desktop: ## Build and run on this Mac. Usage: make desktop TEAM=XXXXXXXXXX
 		mkdir -p /Applications/Porthole.app/Wrapper; \
 		cp -R "$$APP" /Applications/Porthole.app/Wrapper/; \
 		ln -sf Wrapper/Porthole.app /Applications/Porthole.app/WrappedBundle; \
-		echo "Launching /Applications/Porthole.app"; open /Applications/Porthole.app
+		echo "Launching /Applications/Porthole.app"; open /Applications/Porthole.app; \
+		echo "If it quits at once: Gatekeeper rejects each new development build until you allow it in System Settings > Privacy & Security > Open Anyway"
 
 team: ## Show Apple development team ids available on this Mac
 	@IDS=$$( (security find-identity -v -p codesigning | grep -oE '\(([A-Z0-9]{10})\)' | tr -d '()'; \

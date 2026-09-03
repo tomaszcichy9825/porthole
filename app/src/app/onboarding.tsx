@@ -199,7 +199,7 @@ export default function Onboarding() {
 
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.paper },
-  scroll: { padding: 24, gap: 22, flexGrow: 1, justifyContent: 'center' },
+  scroll: { padding: 24, gap: 22, flexGrow: 1, justifyContent: 'center', maxWidth: 600, width: '100%', alignSelf: 'center' },
   header: { gap: 12, alignItems: 'flex-start' },
   title: { fontSize: 28, fontFamily: fonts.sansBold, color: colors.ink, letterSpacing: -0.8 },
   sub: { fontSize: 15, color: colors.textMuted, lineHeight: 22, fontFamily: fonts.sans },

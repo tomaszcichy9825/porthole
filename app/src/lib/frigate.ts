@@ -57,7 +57,16 @@ export type EventsQuery = {
 
 export type RecordingSegment = { start_time: number; end_time: number; duration: number };
 
-export type StorageInfo = Record<string, { bandwidth: number; usage: number; usage_percent: number }>;
+// Low-res, low-fps proxy clips Frigate generates alongside recordings. The
+// Frigate UI scrubs against these rather than the recordings themselves:
+// one clip is fetched once, then every scrub is a local seek.
+export type PreviewClip = { camera: string; src: string; type: string; start: number; end: number };
+
+// Motion per `scale`-second bucket, what the Frigate UI draws behind its
+// timeline. `motion` is Frigate's activity score for the bucket.
+export type MotionBucket = { start_time: number; motion: number; camera: string };
+
+export type StorageInfo =Record<string, { bandwidth: number; usage: number; usage_percent: number }>;
 
 const hostOf = (baseUrl: string): string =>
   baseUrl.replace(/^[a-z]+:\/\//i, '').replace(/[:/].*$/, '');
@@ -82,32 +91,45 @@ export async function login(baseUrl: string, user: string, password: string): Pr
   return m[1];
 }
 
-export function createClient(baseUrl: string, rtspPort = 8554, token?: string | null) {
+// `token` may be a getter so a re-minted JWT is picked up without rebuilding
+// the client; `onAuthError` runs once on 401/403 (re-login), then the request
+// is retried. Frigate sessions expire after a day, so a long-lived app
+// session needs this to keep working.
+export function createClient(
+  baseUrl: string,
+  rtspPort = 8554,
+  token?: string | null | (() => string | null),
+  onAuthError?: () => Promise<void>,
+) {
   const api = baseUrl.replace(/\/$/, '');
   const rtspHost = `${hostOf(api)}:${rtspPort}`;
+  const tokenNow = () => (typeof token === 'function' ? token() : token) ?? null;
   // Same shape for fetch, expo-image sources and expo-video sources.
   // Bearer first: iOS URLSession manages cookies itself and can drop a
   // manually set Cookie header; Frigate accepts either.
-  const authHeaders: Record<string, string> = token
-    ? { Authorization: `Bearer ${token}`, Cookie: `frigate_token=${token}` }
-    : {};
+  const headersFor = (t: string | null): Record<string, string> =>
+    t ? { Authorization: `Bearer ${t}`, Cookie: `frigate_token=${t}` } : {};
 
-  const j = async <T>(path: string, init?: RequestInit): Promise<T> => {
-    const r = await fetch(`${api}${path}`, { ...init, headers: { ...authHeaders, ...init?.headers } });
-    if (r.status === 401 || r.status === 403) throw new AuthError(r.status);
+  const raw = async (path: string, init?: RequestInit, retried = false): Promise<Response> => {
+    const r = await fetch(`${api}${path}`, { ...init, headers: { ...headersFor(tokenNow()), ...init?.headers } });
+    if (r.status === 401 || r.status === 403) {
+      if (onAuthError && !retried) {
+        await onAuthError();
+        return raw(path, init, true);
+      }
+      throw new AuthError(r.status);
+    }
     if (!r.ok) throw new Error(`Frigate ${path} → ${r.status}`);
-    return r.json() as Promise<T>;
+    return r;
   };
+  const j = <T>(path: string, init?: RequestInit): Promise<T> => raw(path, init).then((r) => r.json() as Promise<T>);
 
   return {
     api,
-    authHeaders,
-    getVersion: async () => {
-      const r = await fetch(`${api}/api/version`, { headers: authHeaders });
-      if (r.status === 401 || r.status === 403) throw new AuthError(r.status);
-      if (!r.ok) throw new Error(`Frigate /api/version → ${r.status}`);
-      return r.text();
+    get authHeaders() {
+      return headersFor(tokenNow());
     },
+    getVersion: () => raw('/api/version').then((r) => r.text()),
     getConfig: () => j<FrigateConfig>('/api/config'),
 
     getEvents: (p: EventsQuery = {}) => {
@@ -123,6 +145,15 @@ export function createClient(baseUrl: string, rtspPort = 8554, token?: string | 
       j<RecordingSegment[]>(`/api/${camera}/recordings?after=${Math.floor(after)}&before=${Math.floor(before)}`),
     getRecordingsSummary: (camera: string) => j<unknown>(`/api/${camera}/recordings/summary`),
 
+    // 404s when the camera has no previews cached for the range.
+    getPreviews: (camera: string, after: number, before: number) =>
+      j<PreviewClip[]>(`/api/preview/${camera}/start/${Math.floor(after)}/end/${Math.ceil(before)}`),
+
+    getMotionActivity: (camera: string, after: number, before: number, scale: number) =>
+      j<MotionBucket[]>(
+        `/api/review/activity/motion?cameras=${camera}&after=${Math.floor(after)}&before=${Math.ceil(before)}&scale=${Math.round(scale)}`,
+      ),
+
     getStorage: () => j<StorageInfo>('/api/recordings/storage'),
     getPtzInfo: (camera: string) => j<{ features?: string[]; presets?: string[] }>(`/api/${camera}/ptz/info`),
 
@@ -136,6 +167,8 @@ export function createClient(baseUrl: string, rtspPort = 8554, token?: string | 
     eventThumbUrl: (id: string) => `${api}/api/events/${id}/thumbnail.jpg`,
     snapshotUrl: (camera: string, height?: number) =>
       `${api}/api/${camera}/latest.jpg${height ? `?h=${height}` : ''}`,
+    // `src` comes back from the preview API as a server-absolute path.
+    previewUrl: (src: string) => `${api}${src.startsWith('/') ? src : `/${src}`}`,
     recordingFrameUrl: (camera: string, frameTime: number) =>
       `${api}/api/${camera}/recordings/${Math.floor(frameTime)}/snapshot.jpg`,
   };

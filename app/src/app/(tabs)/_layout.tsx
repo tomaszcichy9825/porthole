@@ -1,4 +1,4 @@
-import { Slot, Tabs } from 'expo-router';
+import { Tabs } from 'expo-router';
 import { View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
@@ -33,42 +33,40 @@ const GearIcon = ({ color }: { color: import('react-native').ColorValue }) => (
 export default function TabsLayout() {
   const wide = useWide();
 
-  // Wide (Mac, iPad landscape): the design's desktop rail replaces tabs.
-  if (wide) {
-    return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: colors.paper }} edges={['top', 'left', 'right']}>
-        <View style={{ flex: 1, flexDirection: 'row' }}>
-          <Rail />
-          <View style={{ flex: 1 }}>
-            <Slot />
-          </View>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
+  // One navigator for both shapes. Wide (Mac, iPad landscape) hides the
+  // tab bar and puts the design's rail beside it; swapping navigators when
+  // the window crossed the breakpoint crashed the router mid-resize.
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: colors.accent,
-        tabBarInactiveTintColor: colors.textMuted,
-        tabBarStyle: { backgroundColor: colors.card, borderTopColor: colors.border },
-        tabBarLabelStyle: { fontFamily: fonts.sansSemiBold, fontSize: 10 },
-      }}
-    >
-      <Tabs.Screen
-        name="cameras"
-        options={{ title: 'Cameras', tabBarIcon: ({ color }) => <GridIcon color={color} /> }}
-      />
-      <Tabs.Screen
-        name="events"
-        options={{ title: 'Events', tabBarIcon: ({ color }) => <ListIcon color={color} /> }}
-      />
-      <Tabs.Screen
-        name="settings"
-        options={{ title: 'Settings', tabBarIcon: ({ color }) => <GearIcon color={color} /> }}
-      />
-    </Tabs>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.paper }} edges={wide ? ['top', 'left', 'right'] : []}>
+      <View style={{ flex: 1, flexDirection: 'row' }}>
+        {wide ? <Rail /> : null}
+        <View style={{ flex: 1 }}>
+          <Tabs
+            screenOptions={{
+              headerShown: false,
+              tabBarActiveTintColor: colors.accent,
+              tabBarInactiveTintColor: colors.textMuted,
+              tabBarStyle: wide
+                ? { display: 'none' }
+                : { backgroundColor: colors.card, borderTopColor: colors.border },
+              tabBarLabelStyle: { fontFamily: fonts.sansSemiBold, fontSize: 10 },
+            }}
+          >
+            <Tabs.Screen
+              name="cameras"
+              options={{ title: 'Cameras', tabBarIcon: ({ color }) => <GridIcon color={color} /> }}
+            />
+            <Tabs.Screen
+              name="events"
+              options={{ title: 'Events', tabBarIcon: ({ color }) => <ListIcon color={color} /> }}
+            />
+            <Tabs.Screen
+              name="settings"
+              options={{ title: 'Settings', tabBarIcon: ({ color }) => <GearIcon color={color} /> }}
+            />
+          </Tabs>
+        </View>
+      </View>
+    </SafeAreaView>
   );
 }
